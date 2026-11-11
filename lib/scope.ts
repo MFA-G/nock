@@ -276,10 +276,17 @@ class Scope extends EventEmitter {
     )
   }
 
-  buildFilter() {
-    const filteringArguments = Array.from(arguments) as any[]
-
-    if (arguments[0] instanceof RegExp) {
+  /**
+   * Build a filter function from a regular expression and its replacement, or
+   * from a function. Returns `undefined` when the arguments are neither, which
+   * lets the callers report the invalid invocation.
+   */
+  buildFilter(
+    filter: RegExp | ((...args: any[]) => string),
+    replace?: string,
+  ): ((candidate: string) => string) | undefined {
+    if (filter instanceof RegExp) {
+      const regexp = filter
       return function (candidate: string) {
         /* istanbul ignore if */
         if (typeof candidate !== 'string') {
@@ -287,33 +294,46 @@ class Scope extends EventEmitter {
             `Nock internal assertion failed: typeof candidate is ${typeof candidate}. If you encounter this error, please report it as a bug.`,
           )
         }
-        return candidate.replace(filteringArguments[0], filteringArguments[1])
+        // A regexp is always paired with a replacement string, as the
+        // overloads on the callers enforce; `replace` is optional here only so
+        // that invalid invocations can be reported instead of silently
+        // producing a filter.
+        return candidate.replace(regexp, replace as string)
       }
-    } else if (typeof arguments[0] === 'function') {
-      return arguments[0]
+    } else if (typeof filter === 'function') {
+      return filter
     }
   }
 
-  filteringPath() {
-    this.transformPathFunction = this.buildFilter.apply(this, arguments as any)
-    if (!this.transformPathFunction) {
+  filteringPath(regex: RegExp, replace: string): this
+  filteringPath(fn: (path: string) => string): this
+  filteringPath(
+    filter: RegExp | ((path: string) => string),
+    replace?: string,
+  ): this {
+    const filterFunction = this.buildFilter(filter, replace)
+    if (!filterFunction) {
       throw new Error(
         'Invalid arguments: filtering path should be a function or a regular expression',
       )
     }
+    this.transformPathFunction = filterFunction
     return this
   }
 
-  filteringRequestBody() {
-    this.transformRequestBodyFunction = this.buildFilter.apply(
-      this,
-      arguments as any,
-    )
-    if (!this.transformRequestBodyFunction) {
+  filteringRequestBody(regex: RegExp, replace: string): this
+  filteringRequestBody(fn: (body: string, recordedBody: string) => string): this
+  filteringRequestBody(
+    filter: RegExp | ((body: string, recordedBody: string) => string),
+    replace?: string,
+  ): this {
+    const filterFunction = this.buildFilter(filter, replace)
+    if (!filterFunction) {
       throw new Error(
         'Invalid arguments: filtering request body should be a function or a regular expression',
       )
     }
+    this.transformRequestBodyFunction = filterFunction
     return this
   }
 
